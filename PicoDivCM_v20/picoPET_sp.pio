@@ -1,0 +1,38 @@
+.program picopet_sp
+
+; Single Period Counter
+; Waits for the GPIO16 pin to go HIGH and starts to count clock cycles.
+; It uses X register to count the number of clock cycles by decrementing 
+; its value from max value (2**32).
+; Only one period is is analyzed, so OSR register setting is ignored.
+;
+; Version:
+; 17-Oct-2021  Marek Dorsic (.md)
+;
+
+.wrap_target 
+    wait 1 pin 0            ; wait for rising edge and turn off the LED (with "side 0")
+    mov x ~NULL             ; set X to be 2^32 and turn on the LED because rising edge detected first time since program started
+high:
+    jmp x-- highd           ; decrement X and go waiting while pin HIGH (until falling edge)
+highd:
+    jmp pin high            ; loop until pin HIGH
+;low:
+;    jmp pin write           ; if next rising edge (pin HIGH) goto write, but first time on this instruction means falling edge so turn off LED
+;    jmp x-- low             ; else decrement and loop
+write:
+    mov isr x               ; move X to output register, also rising edge detected so turn on the LED
+    push noblock            ; push ISR value to main routine
+.wrap
+
+
+% c-sdk {
+// this is a raw helper function for use by the user which sets up the GPIO output, and configures the SM to output on a particular pin
+
+void picopet_sp_program_init(PIO pio, uint sm, uint offset, uint pin) {
+   pio_sm_config c = picopet_sp_program_get_default_config(offset);
+   sm_config_set_in_pins(&c, pin);
+   sm_config_set_jmp_pin(&c, pin);
+   pio_sm_init(pio, sm, offset, &c);
+}
+%}

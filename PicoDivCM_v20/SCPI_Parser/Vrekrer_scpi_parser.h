@@ -7,25 +7,43 @@ Header file.
 #include <stdlib.h>
 #include <string.h>
 #include "pico/stdlib.h"
-#include "hardware/spi.h"
 
 #ifndef VREKRER_SCPI_PARSER_H_
 #define VREKRER_SCPI_PARSER_H_
 
+#define COM_UART
+//#define COM_SPI
+#ifdef COM_UART
+#define UART_TX 3
+#define UART_RX 4
+#define UART_TX_SM 3
+#define UART_RX_SM 3
+#define UART_TX_PIO pio0
+#define UART_RX_PIO pio1
+#define UART_TIMEOUT_US 1000
+#endif
+#ifdef COM_SPI
+#define COMSPI spi0
+#define SPICLK_GPIO 2
+#define SPITX_GPIO 3
+#define SPIRX_GPIO 4
+#define SPICS_GPIO 5
+#define SPI_MHZ 1
+#endif
 
 /// Max branch size of the command tree and max number of parameters.
 #ifndef SCPI_ARRAY_SIZE
-  #define SCPI_ARRAY_SIZE 6
+  #define SCPI_ARRAY_SIZE 16
 #endif
 
 /// Max number of valid tokens.
 #ifndef SCPI_MAX_TOKENS
-  #define SCPI_MAX_TOKENS 12
+  #define SCPI_MAX_TOKENS 32
 #endif
 
 /// Max number of registered commands.
 #ifndef SCPI_MAX_COMMANDS
-  #define SCPI_MAX_COMMANDS 20
+  #define SCPI_MAX_COMMANDS 32
 #endif
 
 /// Length of the message buffer.
@@ -102,7 +120,7 @@ class SCPI_Interface {
     //Constructor
     SCPI_Interface();
     char getchar_non_blocking();
-    void putchars(char* message);
+    void putchars(const char* message);
 };
 
 ///Alias of SCPI_Commands.
@@ -127,7 +145,7 @@ class SCPI_Printf_Interface : public SCPI_Interface {
 //    ~SCPI_Printf_Interface();
 };
 
-
+/*
 class SCPI_SPI_Interface : public SCPI_Interface {
   public:
     //Constructor
@@ -140,7 +158,7 @@ class SCPI_SPI_Interface : public SCPI_Interface {
     uint8_t buf_[32];
     uint8_t bufidx_ = 0;
 };
-
+*/
 
 /*!
   Main class of the Vrekrer_SCPI_Parser library.
@@ -175,6 +193,7 @@ class SCPI_Parser {
     BufferOverflow,
     ///CommandOverflow,
     CommandOverflow,
+    InvalidParameter,
     MissingParameter,
     UnknownSource
   };
@@ -188,8 +207,10 @@ class SCPI_Parser {
   char* GetMessage(SCPI_Interface interface, const char* term_chars);
   //Prints registered tokens and command hashes to the serial interface
   void PrintDebugInfo();
-  ///Magic number used for hashing the commands
+  //Magic number used for hashing the commands
   SCPI_HASH_TYPE hash_magic_number = 37;
+  //Initialized the interface if needed
+  void Initialize();
   
  protected:
   //Add a token to the tokens' storage
@@ -214,6 +235,8 @@ class SCPI_Parser {
   uint8_t message_length_ = 0;
   //Varible used for checking timeout errors
   uint32_t time_checker_;
+  int tx_offset = -1;
+  int rx_offset = -1;
 };
 
 #endif //VREKRER_SCPI_PARSER_H_

@@ -49,6 +49,8 @@
 #define UART_TX 16
 #define UART_RX 17
 
+#define CLK_XO 0
+#define CLK_EXT 1
 
 uint32_t sys_freq = 0;
 uint32_t ext_clk_freq = 0;
@@ -140,6 +142,14 @@ void configure_pios() {
     #endif
 }
 
+void _pdiv_set_ref_clk(uint8_t clk, uint32_t freq) {
+    conf_clocks = true;
+    ext_ref = true;
+    ext_clk_freq = freq;
+    if (clk == CLK_XO) {
+        ext_ref = false;
+    }
+}
 
 void scpi_errorhandler(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
   switch(pdiv_instrument.last_error){
@@ -188,43 +198,56 @@ void pdiv_set_plength(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
     }
 }
 
-void pdiv_set_reftcxo(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
-    ext_ref = false;
-    conf_clocks = true;
-}
-
-void pdiv_set_refext(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
-    if (parameters.Size() > 0) {
-        sscanf(parameters[0], "%" SCNu32, &ext_clk_freq);
+void pdiv_set_ref(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
+    if (parameters.Size() > 1) {
+        uint32_t freq = atoi(parameters[1]);
+        if (strcmp(parameters[0], "EXT") == 0) {
+            printf("setting ref clock to Ext @ %d\n", freq);
+            _pdiv_set_ref_clk(CLK_EXT, freq);
+        } else if (strcmp(parameters[0], "XO") == 0) {
+            printf("setting ref clock to XO\n");
+            _pdiv_set_ref_clk(CLK_XO, 0);
+        } else {
+            pdiv_instrument.last_error = pdiv_instrument.ErrorCode::UnknownSource;
+            scpi_errorhandler(commands, parameters, interface);
+        }
+    } else if (parameters.Size() > 0) {
+        if (strcmp(parameters[0], "XO") == 0) {
+            printf("setting ref clock to XO\n");
+            _pdiv_set_ref_clk(CLK_XO, 0);
+        } else {
+            pdiv_instrument.last_error = pdiv_instrument.ErrorCode::UnknownSource;
+            scpi_errorhandler(commands, parameters, interface);
+        }
     } else {
-        ext_clk_freq = 10000000;
+        pdiv_instrument.last_error = pdiv_instrument.ErrorCode::MissingParameter;
+        scpi_errorhandler(commands, parameters, interface);
+    }    
+}
+
+void pdiv_set_sync_enable(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
+    if (parameters.Size() > 0) {
+        if (strcmp(parameters[0], "ON") == 0 || strcmp(parameters[0], "1") == 0) {
+            sync_output = true;
+        } else if (strcmp(parameters[0], "OFF") == 0 || strcmp(parameters[0], "0") == 0) {
+            sync_output = false;
+        }
     }
-    ext_ref = true;
-    conf_clocks = true;
-    printf("External ref set @%d\n", ext_clk_freq);
 }
 
-void pdiv_set_syncon(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
-    sync_output = true;
-}
-
-void pdiv_set_syncoff(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
-    sync_output = false;
-}
-
-void pdiv_onoff(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
+void pdiv_enable(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
     #ifdef DEBUG
         printf("DEBUG> in command pdiv_onoff.\n");
     #endif
 
     if (parameters.Size() > 0) {
-        if (strcmp(parameters[0], "ON") == 0) {
+        if (strcmp(parameters[0], "ON") == 0 || strcmp(parameters[0], "1") == 0) {
             if (conf_clocks) {
                 configure_clocks();
             }
             configure_pios();
             pdiv_ison = true;
-        } else if (strcmp(parameters[0], "OFF") == 0) {
+        } else if (strcmp(parameters[0], "OFF") == 0 || strcmp(parameters[0], "0") == 0) {
             pio_sm_set_enabled(pio0, 0, false);
             pio_sm_set_enabled(pio0, 1, false);
             pdiv_ison = false;
@@ -238,7 +261,7 @@ void pdiv_onoff(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
     #endif
 }
 
-void pdiv_slide(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
+void pdiv_delay(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
     #ifdef DEBUG
         printf("DEBUG> in pdiv_slide, pdiv_ison=%d, param.size=%d\n", pdiv_ison, parameters.Size());
     #endif
@@ -266,17 +289,13 @@ void initialize() {
     psyncoffset = pio_add_program(pio1, &picodiv_sync_program);
 
     pdiv_instrument.RegisterCommand("*IDN?", &identify);
-    pdiv_instrument.SetCommandTreeBase("CONFigure:DIVider");
+    pdiv_instrument.SetCommandTreeBase(":DIVider");
+        pdiv_instrument.RegisterCommand(":REFerence", &pdiv_set_ref);
         pdiv_instrument.RegisterCommand(":FREQuency", &pdiv_set_freq);
         pdiv_instrument.RegisterCommand(":PULSelength", &pdiv_set_plength);
-        pdiv_instrument.RegisterCommand(":SYNC:ON", &pdiv_set_syncon);
-        pdiv_instrument.RegisterCommand(":SYNC:OFF", &pdiv_set_syncoff);
-    pdiv_instrument.SetCommandTreeBase("CONFigure:REFerence");
-        pdiv_instrument.RegisterCommand(":TCXO", &pdiv_set_reftcxo);
-        pdiv_instrument.RegisterCommand(":EXT", &pdiv_set_refext);    
-    pdiv_instrument.SetCommandTreeBase("DIVider");
-        pdiv_instrument.RegisterCommand(":ENABle", &pdiv_onoff);
-        pdiv_instrument.RegisterCommand(":SLIDe", &pdiv_slide);
+        pdiv_instrument.RegisterCommand(":SYNC", &pdiv_set_sync_enable);
+        pdiv_instrument.RegisterCommand(":ENABle", &pdiv_enable);
+        pdiv_instrument.RegisterCommand(":DELay", &pdiv_delay);
     pdiv_instrument.SetErrorHandler(&scpi_errorhandler);
 }
 
