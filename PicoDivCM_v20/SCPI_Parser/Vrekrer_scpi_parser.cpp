@@ -359,11 +359,15 @@ void SCPI_Parser::Initialize() {
     #ifdef COM_UART
     if (tx_offset == -1)
       tx_offset = pio_add_program(UART_TX_PIO, &uart_tx_program);
-    uart_tx_program_init(UART_TX_PIO, UART_TX_SM, tx_offset, UART_TX, 9600);
+    else
+      pio_sm_set_enabled(UART_TX_PIO, UART_TX_SM, false);
+    uart_tx_program_init(UART_TX_PIO, UART_TX_SM, tx_offset, UART_TX_GPIO, 9600);
 
     if (rx_offset == -1)
       rx_offset = pio_add_program(UART_RX_PIO, &uart_rx_program);
-    uart_rx_program_init(UART_RX_PIO, UART_RX_SM, rx_offset, UART_RX, 9600);    
+    else
+      pio_sm_set_enabled(UART_RX_PIO, UART_RX_SM, false);
+    uart_rx_program_init(UART_RX_PIO, UART_RX_SM, rx_offset, UART_RX_GPIO, 9600);    
     #endif
     #ifdef COM_SPI
     spi_init(COMSPI, SPI_MHZ * 1000000);    //Initialise GPIO pins for SPI communication

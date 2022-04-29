@@ -91,27 +91,27 @@ uint32_t pdiv_ref_freq = XOSC_MHZ * MHZ;
 uint8_t pdiv_ref_clk = CLK_XO;
 uint32_t pdiv_pulse_len = 10000000;
 uint32_t pdiv_pulse_len_ns = 10000000;    // 10 ms
-uint32_t pdiv_pulse_perc = false;
+uint32_t pdiv_pulse_perc = 0;
 uint32_t pdiv_out_freq_hz = 1;            // 1 Hz ~ 1 PPS
-bool pdiv_ext_ref = false;
-bool pdiv_enabled = false;
-bool pdiv_sync_output = false;
+uint8_t pdiv_ext_ref = 0;
+uint8_t pdiv_enabled = 0;
+uint8_t pdiv_sync_output = 0;
 
 uint8_t tic_start = 4;
 uint8_t tic_stop = 5;
 uint8_t tic_ch1_imp = 0;
 uint8_t tic_ch2_imp = 0;
-bool tic_pet_enabled = false;
+uint8_t tic_pet_enabled = 0;
 uint32_t tic_pet_count = -1;
 
 uint32_t trig_pulse_len_ns = 50000;       // 50 us
 uint32_t trig_pulse_len = 50000;
 uint32_t trig_out_freq_hz = 1000;         // 1 Hz ~ 1 PPS
-bool trig_enabled = false;
-bool trig_pulse_perc = false;
-bool trig_sync_output = false;
+uint8_t trig_enabled = 0;
+uint8_t trig_pulse_perc = 0;
+uint8_t trig_sync_output = 0;
 
-bool conf_clocks = true;
+uint8_t conf_clocks = 1;
 int offset = -1;
 int syncoffset = -1;
 int petoffset = -1;
@@ -123,13 +123,12 @@ void configure_clocks() {
     // clk_peri is driving the UART (baudrate)
     #ifdef DEBUG
         printf("DEBUG> Configuring clocks... ext_ref=%d\n", ext_ref);
-    #endif
+    #endif    
     if (pdiv_ext_ref) {
         uint8_t source_gpio = (pdiv_ref_clk == CLK_EXT || pdiv_ref_clk == CLK_INT)? EI_CLK_GPIO : TIC_CLK_GPIO;
         clock_configure_gpin(clk_ref, source_gpio, pdiv_ref_freq, pdiv_ref_freq);
         clock_configure_gpin(clk_sys, source_gpio, pdiv_ref_freq, pdiv_ref_freq);
         clock_configure_gpin(clk_peri, source_gpio, pdiv_ref_freq, pdiv_ref_freq);
-        gpio_put(PICO_DEFAULT_LED_PIN, true);
         xosc_disable();
     } else {
         xosc_init();
@@ -138,18 +137,19 @@ void configure_clocks() {
         clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_XOSC_CLKSRC, pdiv_ref_freq, pdiv_ref_freq);
         clock_gpio_init(OUT_XO_GPIO, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_XOSC_CLKSRC, 1);
     }
+    clock_gpio_init(PICO_DEFAULT_LED_PIN, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, MHZ);
     // stop the clk_sys PPL
     pll_deinit(pll_sys);
     
 //    stdio_uart_init_full(uart_default, 9600, UART_TX, UART_RX);
     cm_instrument.Initialize();
-    conf_clocks = false;
+    conf_clocks = 0;
     #ifdef DEBUG
         printf("DEBUG> DONE clocks configuration\n", ext_ref);
     #endif
 }
 
-void _blink_pin_forever(uint sm, uint pin, uint32_t total_clk, uint32_t pulse_clk, bool sync) {
+void _blink_pin_forever(uint sm, uint pin, uint32_t total_clk, uint32_t pulse_clk, uint8_t sync) {
     #ifdef DEBUG
         printf("DEBUG> Blink pin forever pdiv_ison=%d, sm=%d, pin=%d, sync=%d, total_clk=%u\n", pdiv_ison, sm, pin, sync, total_clk);
     #endif
@@ -167,7 +167,7 @@ void _blink_pin_forever(uint sm, uint pin, uint32_t total_clk, uint32_t pulse_cl
         pio_sm_init(pio, sm, offset, NULL);
         picodiv_program_init(pio, sm, offset, pin);
     }
-    pio_sm_set_enabled(pio, sm, true);
+    pio_sm_set_enabled(pio, sm, 1);
 
     pio->txf[sm] = pulse_clk - 3;      
     pio->txf[sm] = total_clk - pulse_clk - 3;       // write number off LOW clock cycles to PIO register
@@ -191,18 +191,7 @@ uint32_t multiplier(const char *str) {
     return 1;
 }
 
-void _pdiv_set_ref_clk(uint8_t clk, uint32_t freq) {
-    conf_clocks = true;
-    pdiv_ext_ref = true;
-    pdiv_ref_clk = clk;
-    pdiv_ref_freq = freq;
-    if (pdiv_ref_clk == CLK_XO) {
-        pdiv_ref_freq = XOSC_MHZ * MHZ;
-        pdiv_ext_ref = false;
-    }
-}
-
-uint32_t _pulse_len_ns(bool isperc, uint32_t value, uint32_t clk_hz, uint32_t ref_clk_hz) {
+uint32_t _pulse_len_ns(uint8_t isperc, uint32_t value, uint32_t clk_hz, uint32_t ref_clk_hz) {
     uint32_t ret = 0;
     if (isperc) {
         ret =  (uint32_t)(((double)1.0E7*(double)value)/(double)clk_hz);
@@ -245,47 +234,71 @@ void _trig_configure_pios() {
     #endif
 }
 
-void _pdiv_enable(bool on) {
+void _pdiv_enable(uint8_t on) {
     if (on) {
         if (conf_clocks)
             configure_clocks();
         _pdiv_configure_pios();
-        pdiv_enabled = true;
+        pdiv_enabled = 1;
     } else {
-        pio_sm_set_enabled(pio0, PDIV_SM, false);
-        pio_sm_set_enabled(pio1, PDIV_SM, false);
-        pdiv_enabled = false;
+        pio_sm_set_enabled(pio0, PDIV_SM, 0);
+        pio_sm_set_enabled(pio1, PDIV_SM, 0);
+        pdiv_enabled = 0;
     }
 }
 
 void _pdiv_delay(uint32_t n_clk_cycles) {
     if (pdiv_enabled) {
         PIO pio = (pdiv_sync_output)? pio1 : pio0;
-        for (uint32_t i=0; i<n_clk_cycles; i++) {
-            pio_sm_exec_wait_blocking(pio, PDIV_SM, pio_encode_nop());
-        }
+        pio_sm_exec(pio, PDIV_SM, pio_encode_delay(n_clk_cycles));
+//        for (uint32_t i=0; i<n_clk_cycles; i++) {
+//            pio_sm_exec_wait_blocking(pio, PDIV_SM, pio_encode_nop());
+//        }
     }
 }
 
-void _trig_enable(bool on) {
+void _trig_enable(uint8_t on) {
     if (on) {
         if (conf_clocks)
             configure_clocks();
         _trig_configure_pios();
-        trig_enabled = true;
+        trig_enabled = 1;
     } else {
-        pio_sm_set_enabled(pio0, TRIG_SM, false);
-        pio_sm_set_enabled(pio1, TRIG_SM, false);
-        trig_enabled = false;
+        pio_sm_set_enabled(pio0, TRIG_SM, 0);
+        pio_sm_set_enabled(pio1, TRIG_SM, 0);
+        trig_enabled = 0;
     }
 }
 
 void _trig_delay(uint32_t n_clk_cycles) {
     if (trig_enabled) {
         PIO pio = (trig_sync_output)? pio1 : pio0;
-        for (uint32_t i=0; i<n_clk_cycles; i++) {
-            pio_sm_exec_wait_blocking(pio, TRIG_SM, pio_encode_nop());
+        pio_sm_exec(pio, TRIG_SM, pio_encode_delay(n_clk_cycles));
+//        for (uint32_t i=0; i<n_clk_cycles; i++) {
+//            pio_sm_exec_wait_blocking(pio, TRIG_SM, pio_encode_nop());
+//        }
+    }
+}
+
+void _pdiv_set_ref_clk(uint8_t clk, uint32_t freq) {
+    conf_clocks = (clk != pdiv_ref_clk) || freq != (pdiv_ref_freq);
+    if (conf_clocks) {
+        pdiv_ext_ref = 1;
+        pdiv_ref_clk = clk;
+        pdiv_ref_freq = freq;
+        if (pdiv_ref_clk == CLK_XO) {
+            pdiv_ref_freq = XOSC_MHZ * MHZ;
+            pdiv_ext_ref = 0;
         }
+        if (pdiv_enabled) {
+            pdiv_pulse_len_ns = _pulse_len_ns(pdiv_pulse_perc, pdiv_pulse_len, pdiv_out_freq_hz, pdiv_ref_freq);            
+            _pdiv_configure_pios();
+        }
+        if (trig_enabled) {
+            trig_pulse_len_ns = _pulse_len_ns(trig_pulse_perc, trig_pulse_len, trig_out_freq_hz, pdiv_ref_freq);
+            _trig_configure_pios();
+        }
+        configure_clocks();
     }
 }
 
@@ -306,18 +319,47 @@ void _tic_set_impedance(uint8_t channel, uint8_t impedance) {
     }
 }
 
-void _tic_pet_enable(bool on) {
+void _tic_pet_enable(uint8_t on) {
     if (on) {
         picopet_sp_program_init(pio0, PET_SM, petoffset, GATE_GPIO);
-        pio_sm_set_enabled(pio0, PET_SM, true);
+        pio_sm_set_enabled(pio0, PET_SM, 1);
     } else {
-        pio_sm_set_enabled(pio0, PET_SM, false);
+        pio_sm_set_enabled(pio0, PET_SM, 0);
     }
     tic_pet_enabled = on;
 }
 
 void _ack(SCPI_I interface) {
     interface.putchars("OK\n");
+}
+
+void _source_name(char* buf, uint8_t source) {
+    switch (source)
+    {
+    case CH1:
+        strcpy(buf, "CH1");
+        break;
+    case CH2:
+        strcpy(buf, "CH2");
+        break;
+    case CLK_TRIG:
+        strcpy(buf, "TRIG");
+        break;
+    case CLK_REF:
+        strcpy(buf, "REF");
+        break;
+    case CLK_XO:
+        strcpy(buf, "XO");
+        break;
+    case CLK_EXT:
+        strcpy(buf, "EXT");
+        break;
+    case CLK_INT:
+        strcpy(buf, "INT");
+        break;    
+    default:
+        break;
+    }
 }
 
 void scpi_errorhandler(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
@@ -382,6 +424,13 @@ void pdiv_set_ref(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
 }
 
 void pdiv_get_ref(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
+    char str[6];
+    _source_name(str, pdiv_ref_clk);
+    sprintf(str, "%s\n", str);
+    interface.putchars(str);
+}
+
+void pdiv_get_reffreq(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
     char str[12];
     if (conf_clocks) {
         // return negative value, if the freq is waiting to be applied
@@ -399,10 +448,10 @@ void pdiv_enable(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
 
     if (parameters.Size() > 0) {
         if (strcmp(parameters[0], "ON") == 0 || strcmp(parameters[0], "1") == 0) {
-            _pdiv_enable(true);
+            _pdiv_enable(1);
             _ack(interface);
         } else if (strcmp(parameters[0], "OFF") == 0 || strcmp(parameters[0], "0") == 0) {
-            _pdiv_enable(false);
+            _pdiv_enable(0);
             _ack(interface);
         } else {
             cm_instrument.last_error = cm_instrument.ErrorCode::InvalidParameter;
@@ -447,7 +496,7 @@ void pdiv_set_freq(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
             pdiv_pulse_len_ns = _pulse_len_ns(pdiv_pulse_perc, pdiv_pulse_len, pdiv_out_freq_hz, pdiv_ref_freq);            
         }
         if (pdiv_enabled) {
-            _pdiv_enable(true);
+            _pdiv_enable(1);
         }
         _ack(interface);
     } else {
@@ -465,7 +514,7 @@ void pdiv_set_plength(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
         pdiv_pulse_len = atoi(parameters[0]);
         pdiv_pulse_len_ns = _pulse_len_ns(pdiv_pulse_perc, pdiv_pulse_len, pdiv_out_freq_hz, pdiv_ref_freq);
         if (pdiv_enabled) {
-            _pdiv_enable(true);
+            _pdiv_enable(1);
         }
         _ack(interface);
     } else {
@@ -477,14 +526,14 @@ void pdiv_set_plength(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
 void pdiv_set_sync_enable(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
     if (parameters.Size() > 0) {
         if (strcmp(parameters[0], "ON") == 0 || strcmp(parameters[0], "1") == 0) {
-            pdiv_sync_output = true;
+            pdiv_sync_output = 1;
             if (pdiv_enabled) {
-                _pdiv_enable(false);
-                _pdiv_enable(true);
+                _pdiv_enable(0);
+                _pdiv_enable(1);
             }
             _ack(interface);
         } else if (strcmp(parameters[0], "OFF") == 0 || strcmp(parameters[0], "0") == 0) {
-            pdiv_sync_output = false;
+            pdiv_sync_output = 0;
             _ack(interface);
         } else {
             cm_instrument.last_error = cm_instrument.ErrorCode::InvalidParameter;
@@ -503,10 +552,10 @@ void trig_enable(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
 
     if (parameters.Size() > 0) {
         if (strcmp(parameters[0], "ON") == 0 || strcmp(parameters[0], "1") == 0) {
-            _trig_enable(true);
+            _trig_enable(1);
             _ack(interface);
         } else if (strcmp(parameters[0], "OFF") == 0 || strcmp(parameters[0], "0") == 0) {
-            _trig_enable(false);
+            _trig_enable(0);
             _ack(interface);
         } else {
             cm_instrument.last_error = cm_instrument.ErrorCode::InvalidParameter;
@@ -549,7 +598,7 @@ void trig_set_freq(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
         trig_out_freq_hz = atoi(parameters[0])*multiplier(parameters[0]);
         trig_pulse_len_ns = _pulse_len_ns(trig_pulse_perc, trig_pulse_len, trig_out_freq_hz, pdiv_ref_freq);
         if (trig_enabled) {
-            _trig_enable(true);
+            _trig_enable(1);
         }
         _ack(interface);
     } else {
@@ -571,7 +620,7 @@ void trig_set_plength(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
             trig_pulse_len = atoi(parameters[0]);
         trig_pulse_len_ns = _pulse_len_ns(trig_pulse_perc, trig_pulse_len, trig_out_freq_hz, pdiv_ref_freq);
         if (trig_enabled) {
-            _trig_enable(true);
+            _trig_enable(1);
         }
         _ack(interface);
     } else {
@@ -583,14 +632,14 @@ void trig_set_plength(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
 void trig_set_sync_enable(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
     if (parameters.Size() > 0) {
         if (strcmp(parameters[0], "ON") == 0 || strcmp(parameters[0], "1") == 0) {
-            trig_sync_output = true;
+            trig_sync_output = 1;
             if (trig_enabled) {
-                _trig_enable(false);
-                _trig_enable(true);
+                _trig_enable(0);
+                _trig_enable(1);
             }
             _ack(interface);
         } else if (strcmp(parameters[0], "OFF") == 0 || strcmp(parameters[0], "0") == 0) {
-            trig_sync_output = false;
+            trig_sync_output = 0;
             _ack(interface);
         } else {
             cm_instrument.last_error = cm_instrument.ErrorCode::InvalidParameter;
@@ -606,25 +655,25 @@ void tic_set_start(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
     if (parameters.Size() > 0) {
         if (strcmp(parameters[0], "CH1") == 0) {
 //            interface.putchars("setting TIC start to CH1\n");
-            tic_stop = CH1;
+            tic_start = CH1;
             gpio_put(START_S1_GPIO, 0);
             gpio_put(START_S0_GPIO, 0);
             _ack(interface);
         } else if (strcmp(parameters[0], "CH2") == 0) {
 //            interface.putchars("setting TIC start to CH2\n");
-            tic_stop = CH2;
+            tic_start = CH2;
             gpio_put(START_S1_GPIO, 1);
             gpio_put(START_S0_GPIO, 0);
             _ack(interface);
         } else if (strcmp(parameters[0], "REF") == 0) {
 //            interface.putchars("setting TIC start to REF\n");
-            tic_stop = CLK_REF;
+            tic_start = CLK_REF;
             gpio_put(START_S1_GPIO, 0);
             gpio_put(START_S0_GPIO, 1);
             _ack(interface);
         } else if (strcmp(parameters[0], "TRIG") == 0) {
 //            interface.putchars("setting TIC start to TRIG\n");
-            tic_stop = CLK_TRIG;
+            tic_start = CLK_TRIG;
             gpio_put(START_S1_GPIO, 1);
             gpio_put(START_S0_GPIO, 1);
             _ack(interface);
@@ -677,6 +726,8 @@ void tic_set_stop(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
 void tic_set_impedance(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
     uint8_t imp = 0;
     uint8_t ch = 0;
+//    sprintf(buf, "parameters count %d, parameter0 %s", parameters.Size(), parameters[0]);
+//    interface.putchars(buf);
     if (parameters.Size() > 1) {
         if (strcmp(parameters[0], "CH1") == 0) {
             ch = CH1;
@@ -685,6 +736,7 @@ void tic_set_impedance(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
         } else {
             cm_instrument.last_error = cm_instrument.ErrorCode::UnknownSource;
             scpi_errorhandler(commands, parameters, interface);
+            return;
         }
 
         if (strcmp(parameters[1], "LOW") == 0 || strcmp(parameters[1], "50") == 0 || strcmp(parameters[1], "0") == 0) {
@@ -694,6 +746,7 @@ void tic_set_impedance(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
         } else {
             cm_instrument.last_error = cm_instrument.ErrorCode::InvalidParameter;
             scpi_errorhandler(commands, parameters, interface);
+            return;
         }
 
         if (ch > 0 && imp > 0) {
@@ -709,10 +762,10 @@ void tic_set_impedance(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
 void tic_set_pet_enable(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
     if (parameters.Size() > 0) {
         if (strcmp(parameters[0], "ON") == 0 || strcmp(parameters[0], "1") == 0) {
-            _tic_pet_enable(true);
+            _tic_pet_enable(1);
             _ack(interface);
         } else if (strcmp(parameters[0], "OFF") == 0 || strcmp(parameters[0], "0") == 0) {
-            _tic_pet_enable(false);
+            _tic_pet_enable(0);
             _ack(interface);
         } else {
             cm_instrument.last_error = cm_instrument.ErrorCode::InvalidParameter;
@@ -722,6 +775,20 @@ void tic_set_pet_enable(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
         cm_instrument.last_error = cm_instrument.ErrorCode::MissingParameter;
         scpi_errorhandler(commands, parameters, interface);
     }
+}
+
+void tic_get_start(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
+    char str[6];
+    _source_name(str, tic_start);
+    sprintf(str, "%s\n", str);
+    interface.putchars(str);
+}
+
+void tic_get_stop(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
+    char str[6];
+    _source_name(str, tic_stop);
+    sprintf(str, "%s\n", str);
+    interface.putchars(str);
 }
 
 void tic_get_pet_count(SCPI_C commands, SCPI_P parameters, SCPI_I interface) {
@@ -748,7 +815,8 @@ void initialize() {
     cm_instrument.RegisterCommand("*IDN?", &identify);
     cm_instrument.SetCommandTreeBase(":DIVider");
         cm_instrument.RegisterCommand(":REFerence", &pdiv_set_ref);         // params <INT | EXT | XO> <freq in Hz>
-        cm_instrument.RegisterCommand(":REFerence:FREQuency?", &pdiv_get_ref);        
+        cm_instrument.RegisterCommand(":REFerence?", &pdiv_get_ref);
+        cm_instrument.RegisterCommand(":REFerence:FREQuency?", &pdiv_get_reffreq);        
         cm_instrument.RegisterCommand(":ENABle", &pdiv_enable);             // param <ON | 1> | <OFF | 0>
         cm_instrument.RegisterCommand(":DELay", &pdiv_delay);               // param delay in clock cycles
         cm_instrument.RegisterCommand(":FREQuency", &pdiv_set_freq);        // param freq in Hz
@@ -762,8 +830,10 @@ void initialize() {
         cm_instrument.RegisterCommand(":SYNChronization", &trig_set_sync_enable);        // param <ON | 1> | <OFF | 0>
     cm_instrument.SetCommandTreeBase(":TIC");
         cm_instrument.RegisterCommand(":STARt", &tic_set_start);        // param <CH1 | CH2 | TRIG | REF>
+        cm_instrument.RegisterCommand(":STARt?", &tic_get_start);
         cm_instrument.RegisterCommand(":STOP", &tic_set_stop);          // param <CH1 | CH2 | TRIG | REF>
-        cm_instrument.RegisterCommand(":IMP", &tic_set_impedance);      // param <50 | LOW> | <1M | HIGH>
+        cm_instrument.RegisterCommand(":STOP?", &tic_get_stop);
+        cm_instrument.RegisterCommand(":IMPedance", &tic_set_impedance);      // param <50 | LOW> | <1M | HIGH>
         cm_instrument.RegisterCommand(":PET:ENABle", &tic_set_pet_enable); // param <ON | 1> | <OFF | 0>
         cm_instrument.RegisterCommand(":PET?", &tic_get_pet_count);
     cm_instrument.SetErrorHandler(&scpi_errorhandler);
@@ -774,38 +844,40 @@ void initialize() {
 
     cm_instrument.Initialize();
 
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, 1);
     gpio_init(GATE_GPIO);
-    gpio_set_dir(GATE_GPIO, false);
+    gpio_set_dir(GATE_GPIO, 0);
     gpio_pull_down(GATE_GPIO);
 
     gpio_init(OUT_A_GPIO);
-    gpio_set_dir(OUT_A_GPIO, true);
+    gpio_set_dir(OUT_A_GPIO, 1);
     gpio_init(OUT_TRIG_GPIO);
-    gpio_set_dir(OUT_TRIG_GPIO, true);
+    gpio_set_dir(OUT_TRIG_GPIO, 1);
 
     gpio_init(CH1_IMP_GPIO);
-    gpio_set_dir(CH1_IMP_GPIO, true);
-    gpio_put(CH1_IMP_GPIO, false);      // HIGH impedance
+    gpio_set_dir(CH1_IMP_GPIO, 1);
+    gpio_put(CH1_IMP_GPIO, 0);      // HIGH impedance
     gpio_init(CH2_IMP_GPIO);
-    gpio_set_dir(CH2_IMP_GPIO, true);
-    gpio_put(CH2_IMP_GPIO, false);      // HIGH impedance
+    gpio_set_dir(CH2_IMP_GPIO, 1);
+    gpio_put(CH2_IMP_GPIO, 0);      // HIGH impedance
     gpio_init(START_S0_GPIO);
-    gpio_set_dir(START_S0_GPIO, true);
-    gpio_put(START_S0_GPIO, false);
+    gpio_set_dir(START_S0_GPIO, 1);
+    gpio_put(START_S0_GPIO, 0);
     gpio_init(START_S1_GPIO);
-    gpio_set_dir(START_S1_GPIO, true);
-    gpio_put(START_S1_GPIO, false);     // CH1
+    gpio_set_dir(START_S1_GPIO, 1);
+    gpio_put(START_S1_GPIO, 0);     // CH1
     gpio_init(STOP_S0_GPIO);
-    gpio_set_dir(STOP_S0_GPIO, true);
-    gpio_put(STOP_S0_GPIO, false);
+    gpio_set_dir(STOP_S0_GPIO, 1);
+    gpio_put(STOP_S0_GPIO, 0);
     gpio_init(STOP_S1_GPIO);
-    gpio_set_dir(STOP_S1_GPIO, true);
-    gpio_put(STOP_S1_GPIO, true);      // CH2
+    gpio_set_dir(STOP_S1_GPIO, 1);
+    gpio_put(STOP_S1_GPIO, 1);      // CH2
 }
 
 void core1_main() {
     //pet_counting
-    while (true) {
+    while (1) {
         while (tic_pet_enabled) {
             if (!pio_sm_is_rx_fifo_empty(pio0, PET_SM)) {
                 tic_pet_count = pio_sm_get(pio0, PET_SM);            // read the register from ASM code
@@ -818,16 +890,15 @@ void core1_main() {
 int main() {
     
     sleep_ms(3000);
-//    configure_clocks();
-    // initialize UART
 
+    printf("Counter Module v2");
+    initialize();
     _pdiv_set_ref_clk(CLK_XO, XOSC_MHZ*MHZ);
     configure_clocks();
     stdio_init_all();
-    initialize();
     
     multicore_launch_core1(core1_main);
-    while (true) {
+    while (1) {
         cm_instrument.ProcessInput(SCPI_Interface(), "\n");
     }
 }

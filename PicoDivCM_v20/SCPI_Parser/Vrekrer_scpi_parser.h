@@ -14,8 +14,8 @@ Header file.
 #define COM_UART
 //#define COM_SPI
 #ifdef COM_UART
-#define UART_TX 3
-#define UART_RX 4
+#define UART_TX_GPIO 3
+#define UART_RX_GPIO 4
 #define UART_TX_SM 3
 #define UART_RX_SM 3
 #define UART_TX_PIO pio0
