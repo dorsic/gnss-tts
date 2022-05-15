@@ -1,20 +1,38 @@
 import argparse
+from asyncore import read
 import serial
 import serial.threaded
 import sys
 import socket
-
+from mqtt import Mqtt
 
 class SerialToNet(serial.threaded.Protocol):
     """serial->socket"""
 
-    def __init__(self, output=None, echo=False):
+    readdata = ""
+
+    def __init__(self, output=None, echo=False, mqttClient=None):
         self.socket = None
         self.output = output
         self.echo = echo
+        self.mqttClient = mqttClient            
 
     def __call__(self):
         return self
+
+    def on_line(self, data):
+        self.readdata += data
+        line = None
+        if '\n' in data:
+            line = self.readdata[:self.readdata.find('\n')]
+            self.readdata = self.readdata[self.readdata.find('\n')+1:]
+            line = None if line.startswith('#') else line.strip()
+            if line and (line.replace('.', '').replace('-', '').isnumeric()):
+                line = float(line)*1.0e-9
+                line = {'indication': line}
+        if self.mqttClient and line:
+            self.mqttClient.publish(self.mqttClient.topic, line, 1, False)
+
 
     def data_received(self, data):
         if self.socket is not None:
@@ -23,6 +41,9 @@ class SerialToNet(serial.threaded.Protocol):
             self.output.write(data.decode())
         if self.echo:
             print(data.decode(), end='')
+        if self.mqttClient:
+            self.on_line(data.decode())
+
 
 class TSIB(object):
     _ackstr = 'OK\n'
@@ -44,16 +65,22 @@ class TSIB(object):
         if startupfile:
             self.apply_startup(startupfile)
 
-    def send_command(self, command, waitack=True, echo=None, response=None):
+    def execute_mqttcommand(self, topic, message):
+        self.send_command(message, waitack=True, echo=True, response=False)
+
+    def send_command(self, command, waitack=True, echo=False, response=False):
         if not command:
             return True
 
         self.serial.write((command+'\n').encode())
         if echo or self.echo:
             print(command)
+        if waitack or response:
+            answ = self.readline(echo=True)
+        if response:
+            return answ
         if waitack:
-            ack = self.readline(echo=response)
-            return ack==self._ackstr
+            return answ==self._ackstr
         return True
 
     def readline(self, echo=None):
@@ -85,8 +112,14 @@ class TSIB(object):
         sys.stderr.write('\n--- exit ---\n')
         serial_worker.stop()
 
-    def start_net_forwarder(self, localport):
-        ser_to_net = SerialToNet(self.output, self.echo)
+    def start_net_forwarder(self, localport, mqtt, mqtt_topic, mqtt_device):
+        mqttClient = None
+        if mqtt:
+            mqttClient = Mqtt()
+            mqttClient.topic = mqtt_topic
+            mqttClient.registerActor('rarach/timelab/tsib/execute/' + mqtt_device + '/#', self.execute_mqttcommand)
+
+        ser_to_net = SerialToNet(self.output, self.echo, mqttClient)
         serial_worker = serial.threaded.ReaderThread(self.serial, ser_to_net)
         serial_worker.start()
 
@@ -154,6 +187,9 @@ def parse_arguments():
     aparser.add_argument('--startup', '-s', dest='startup', type=str, help='startup commands send to TIC on start')
     aparser.add_argument('--command', '-c', dest='commands', type=str, action='append', nargs="+", default=[], help='command to be executed on TIC')
     aparser.add_argument('--output', '-o', dest='output', type=str, help='output filename')
+    aparser.add_argument('--mqtt', '-m', dest='mqtt', action='store_true', default=False, help='publishes data to MQTT (default: False)')
+    aparser.add_argument('--mqtttopic', '-mt', dest='mqtt_topic', type=str, default='rarach/timelab/tsib/<mqtt_device>/value', help='mqtt topic under which measured values will be published (default: rarach/timelab/tsib/<mqtt_device>/value)')
+    aparser.add_argument('--mqttdevice', '-md', dest='mqtt_device', type=str, default='cmx', help='unique identifier of the device (default: cmx)')
     egroup = aparser.add_mutually_exclusive_group()
     egroup.add_argument('--read', '-r', dest='read', action='store_true', default=False, help='opens the serial port and read infinitely; All startup and -c commands are executed before.')
     egroup.add_argument('--localport', '-p', dest='localport', type=int, help='starts serial port forwarder on port; All startup and -c commands are executed before.')
@@ -173,5 +209,6 @@ if __name__ == "__main__":
     if pargs.read:
         tsib.read_infinite()
     if pargs.localport:
-        tsib.start_net_forwarder(pargs.localport)
+        pargs.mqtt_topic = pargs.mqtt_topic.replace('<mqtt_device>', pargs.mqtt_device)
+        tsib.start_net_forwarder(pargs.localport, pargs.mqtt, pargs.mqtt_topic, pargs.mqtt_device)
     tsib.close()
