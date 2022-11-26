@@ -1,6 +1,6 @@
-# GpsCounter
+# Time Transfer System (TTS)
 
-Time interval counter based on TI TDC7200 chip witch GPS modules for precise time standard comparison.
+Time interval counter based on TI TDC7200 chip(s) witch GNSS modules for precise time standard comparisons (Ublox RCB-F9T, RCB-M8T).
 
 ![Image of GpsCounter-components](/GpsCounter-components.svg)
 
