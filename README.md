@@ -11,3 +11,4 @@ The Frequency counter will have 4 modes:
 - Mode 4 for impulse counting with the RPi Pico. With 10MHz clk_sys it has resolution of 100ns (see [PicPET](http://leapsecond.com/pic/picpet2.htm))
 
 
+![CM v3.0](/PCB/CounterModule/CounterModule%20v3.0/PCB_PicoCounter_v3.svg)
