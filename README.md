@@ -1,4 +1,4 @@
-# Time Transfer System (TTS)
+# Time Transfer System (TTS). ds
 
 Time interval counter based on TI TDC7200 chip(s) witch GNSS modules for precise time standard comparisons (Ublox RCB-F9T, RCB-M8T).
 
